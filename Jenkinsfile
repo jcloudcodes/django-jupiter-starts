@@ -69,23 +69,27 @@ pipeline {
 
     // ✅ Python build/test inside a container (avoids Python 3.9 on host)
     stage('Setup Python + Install Deps (Py3.12 container)') {
-      steps {
-        sh '''
-          set -euxo pipefail
-          docker pull python:3.12-slim
+        steps {
+            sh '''
+            set -euxo pipefail
+            docker pull python:3.12-slim
 
-          docker run --rm -u 0:0 \
-            -v "$PWD:/app" -w /app \
-            python:3.12-slim bash -lc "
-              python --version
-              rm -rf .venv
-              python -m venv .venv
-              .venv/bin/pip install -U pip wheel setuptools
-              .venv/bin/pip install -r requirements.txt
-            "
-        '''
-      }
-    }
+            docker run --rm -u 0:0 \
+                -v "$PWD:/app" -w /app \
+                python:3.12-slim bash -lc "
+                apt-get update
+                apt-get install -y --no-install-recommends gcc build-essential python3-dev libffi-dev
+                rm -rf /var/lib/apt/lists/*
+
+                python --version
+                rm -rf .venv
+                python -m venv .venv
+                .venv/bin/pip install -U pip wheel setuptools
+                .venv/bin/pip install -r requirements.txt
+                "
+            '''
+        }
+        }
 
     stage('Lint + Unit Tests (Py3.12 container)') {
       steps {
