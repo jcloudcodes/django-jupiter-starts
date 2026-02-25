@@ -33,10 +33,23 @@ pipeline {
     NEXUS_RAW_REPO  = 'django-starts-jupiters'
     NEXUS_CRED_ID   = 'jcloudcodes-nexus-cred'
 
-    // Docker registry
-    REGISTRY_URL   = 'https://nexus.jcloudcodes.com'
-    IMAGE_NAME     = 'nasa-docker/nasa_world'
-    DOCKER_CRED_ID = 'docker-registry-cred'
+    // image base name for your app
+    IMAGE_BASE = 'django-starts-jupiters-ig'
+
+    // Nexus Docker registry (set host + port correctly)
+    // Example: nexus.jcloudcodes.com:20080
+    NEXUS_DOCKER_REGISTRY = 'nexus.jcloudcodes.com:20080'
+    NEXUS_DOCKER_REPO     = 'django-starts-jupiters-ig'       // your docker (hosted) repo name in Nexus
+    NEXUS_DOCKER_CRED     = 'jcloudcodes-nexus-cred' // Jenkins username/password cred for Nexus
+
+    // Docker Hub
+    DOCKERHUB_NAMESPACE   = 'jcloudcodes'       // your Docker Hub username/org
+    DOCKERHUB_CRED        = 'jcloudcodes-dockerhub-cred'    // Jenkins username/password cred for Docker Hub
+
+    // // Docker registry
+    // REGISTRY_URL   = 'https://nexus.jcloudcodes.com'
+    // IMAGE_NAME     = 'nasa-docker/nasa_world'
+    // DOCKER_CRED_ID = 'docker-registry-cred'
   }
 
   stages {
@@ -164,19 +177,48 @@ pipeline {
         )
       }
     }
+    stage('Build Docker Image') {
+        steps {
+            script {
+            env.TAG = env.DOCKER_TAG ?: (env.GIT_SHA ?: 'latest')
+            env.LOCAL_IMAGE = "${env.IMAGE_BASE}:${env.TAG}"
+            }
+            sh """
+            set -euxo pipefail
+            docker build -t ${env.LOCAL_IMAGE} -f Dockerfile .
+            """
+        }
+        }
+    stage('Push Docker Images (Parallel)') {
+    steps {
+        script {
+        def tag = env.TAG
 
-    stage('Build & Push Docker Image') {
-      when { expression { return params.PUSH_DOCKER } }
-      steps {
-        dockerBuildPush(
-          registry: env.REGISTRY_URL,
-          credentialsId: env.DOCKER_CRED_ID,
-          image: env.IMAGE_NAME,
-          tag: env.DOCKER_TAG,
-          dockerfile: 'Dockerfile',
-          context: '.'
+        parallel(
+            'Push Nexus': {
+            dockerBuildPush(
+                build: false,
+                sourceImage: env.LOCAL_IMAGE,
+                registry: "http://${env.NEXUS_DOCKER_REGISTRY}",
+                credentialsId: env.NEXUS_DOCKER_CRED,
+                image: "${env.NEXUS_DOCKER_REGISTRY}/${env.NEXUS_DOCKER_REPO}/${env.IMAGE_BASE}",
+                tag: tag
+            )
+            },
+            'Push Docker Hub': {
+            dockerBuildPush(
+                build: false,
+                sourceImage: env.LOCAL_IMAGE,
+                registry: "https://index.docker.io/v1/",
+                credentialsId: env.DOCKERHUB_CRED,
+                image: "${env.DOCKERHUB_NAMESPACE}/${env.IMAGE_BASE}",
+                tag: tag,
+                alsoLatest: (env.BRANCH == 'prod')
+            )
+            }
         )
-      }
+        }
+    }
     }
   }
 
