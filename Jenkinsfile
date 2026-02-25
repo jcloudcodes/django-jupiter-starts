@@ -2,7 +2,15 @@
 
 pipeline {
     //agent any
-  agent { label 'jslave-inbound' }
+  //agent { label 'jslave-inbound' }
+
+  agent {
+    docker {
+      image 'python:3.12-slim'
+      label 'jslave-inbound'
+      args '-u root:root'
+    }
+  }
 
   options {
     timestamps()
