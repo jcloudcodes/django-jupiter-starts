@@ -33,8 +33,12 @@ pipeline {
     NEXUS_RAW_REPO  = 'django-starts-jupiters'
     NEXUS_CRED_ID   = 'jcloudcodes-nexus-cred'
 
-    // image base name for your app
-    IMAGE_BASE = 'django-starts-jupiters-ig'
+    //image base name for your app
+    APP_NAME = 'nasa-app'
+    //IMAGE name (your application container name)
+    IMAGE_NAME = 'nasa-app'
+    APP_NAME    = 'nasa-app'
+    IMAGE_NAME  = 'django-starts-jupiters-ig'
 
     // Nexus Docker registry (set host + port correctly)
     // Example: nexus.jcloudcodes.com:20080
@@ -180,12 +184,13 @@ pipeline {
     stage('Build Docker Image') {
         steps {
             script {
-            env.TAG = env.DOCKER_TAG ?: (env.GIT_SHA ?: 'latest')
-            env.LOCAL_IMAGE = "${env.IMAGE_BASE}:${env.TAG}"
+            env.TAG = "${env.BUILD_NUMBER}"          // tag number
+            env.LOCAL_IMAGE = "${env.IMAGE_NAME}:${env.TAG}"   // nasa-app:12
             }
             sh """
             set -euxo pipefail
             docker build -t ${env.LOCAL_IMAGE} -f Dockerfile .
+            docker images | head
             """
         }
         }
@@ -194,6 +199,12 @@ pipeline {
         script {
         def tag = env.TAG
 
+        def nexusRepoImage = "${env.NEXUS_DOCKER_REGISTRY}/${env.NEXUS_DOCKER_REPO}/${env.IMAGE_NAME}"
+        def hubRepoImage   = "${env.DOCKERHUB_NAMESPACE}/${env.IMAGE_NAME}"
+
+        echo "NEXUS IMAGE: ${nexusRepoImage}:${tag}"
+        echo "HUB   IMAGE: ${hubRepoImage}:${tag}"
+
         parallel(
             'Push Nexus': {
             dockerBuildPush(
@@ -201,8 +212,8 @@ pipeline {
                 sourceImage: env.LOCAL_IMAGE,
                 registry: "http://${env.NEXUS_DOCKER_REGISTRY}",
                 credentialsId: env.NEXUS_DOCKER_CRED,
-                image: "${env.NEXUS_DOCKER_REGISTRY}/${env.NEXUS_DOCKER_REPO}/${env.IMAGE_BASE}",
-                tag: tag
+                image: nexusRepoImage,   // repo/image (NO tag)
+                tag: tag                 // tag number
             )
             },
             'Push Docker Hub': {
@@ -211,7 +222,7 @@ pipeline {
                 sourceImage: env.LOCAL_IMAGE,
                 registry: "https://index.docker.io/v1/",
                 credentialsId: env.DOCKERHUB_CRED,
-                image: "${env.DOCKERHUB_NAMESPACE}/${env.IMAGE_BASE}",
+                image: hubRepoImage,     // namespace/image (NO tag)
                 tag: tag,
                 alsoLatest: (env.BRANCH == 'prod')
             )
