@@ -234,9 +234,17 @@ pipeline {
 
   post {
     always {
-      archiveArtifacts artifacts: 'dist/*.zip', fingerprint: true, onlyIfSuccessful: false
-      junit allowEmptyResults: true, testResults: '**/test-results/**/*.xml, **/pytest-report.xml'
-      cleanWs(deleteDirs: true, notFailBuild: true)
+       // Docker cleanup (don’t fail the build if cleanup fails)
+    sh '''
+      set +e
+      docker images | awk '/django-starts-jupiters-ig/ {print $3}' | sort -u | xargs -r docker rmi -f
+      docker image prune -f
+      set -e
+    '''
+    // Jenkins artifacts + workspace cleanup
+    archiveArtifacts artifacts: 'dist/*.zip', fingerprint: true, onlyIfSuccessful: false
+    junit allowEmptyResults: true, testResults: '**/test-results/**/*.xml, **/pytest-report.xml'
+    cleanWs(deleteDirs: true, notFailBuild: true)
     }
 
     success {
