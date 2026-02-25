@@ -1,8 +1,8 @@
 @Library('jcloudcodes-shared-library@main') _
 
 pipeline {
-    agent any
-  //agent { label 'jslave-inbound' }
+    //agent any
+  agent { label 'jslave-inbound' }
 
   options {
     timestamps()
