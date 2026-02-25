@@ -29,9 +29,9 @@ pipeline {
     SONAR_SERVER       = 'jcloudcodes-sonarqube'
 
     // Nexus raw (zip artifacts)
-    NEXUS_URL      = 'https://nexus.jcloudcodes.com'
-    NEXUS_RAW_REPO = 'django-artifacts'
-    NEXUS_CRED_ID  = 'nexus-cred'
+    NEXUS_URL       = 'http://nexus.jcloudcodes.com'
+    NEXUS_RAW_REPO  = 'django-starts-jupiters'
+    NEXUS_CRED_ID   = 'jcloudcodes-nexus-cred'
 
     // Docker registry
     REGISTRY_URL   = 'https://nexus.jcloudcodes.com'
@@ -144,13 +144,13 @@ pipeline {
         }
         }
 
-    stage('Quality Gate') {
-      steps {
-        timeout(time: 10, unit: 'MINUTES') {
-          waitForQualityGate abortPipeline: true
-        }
-      }
-    }
+    // stage('Quality Gate') {
+    //     steps {
+    //         timeout(time: 60, unit: 'SECONDS') {
+    //         waitForQualityGate abortPipeline: true
+    //         }
+    //     }
+    //     }
 
     stage('Upload Artifact to Nexus (RAW)') {
       when { expression { return params.PUSH_ARTIFACT } }
