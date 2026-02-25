@@ -1,0 +1,35 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: nasa_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: nasa_db
+      POSTGRES_USER: nasa_admin
+      POSTGRES_PASSWORD: admin12345
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # ports:
+    #   - "5432:5432"
+
+  web:
+    build: .
+    container_name: nasa_web
+    command: gunicorn nasa_world.wsgi:application --bind 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      DB_NAME: nasa_db
+      DB_USER: nasa_admin
+      DB_PASSWORD: admin12345
+      DB_HOST: db
+      DB_PORT: 5432
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:

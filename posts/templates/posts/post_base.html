@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="posts-page">
+  <div class="container" style="margin-top:20px;">
+
+    <div class="row">
+      <!-- Left / optional sidebar -->
+      {% block prepost %}
+      {% endblock %}
+
+      <!-- Main posts area -->
+      <div class="col-md-8">
+        {% block post_content %}
+        {% endblock %}
+      </div>
+
+      <!-- Right / optional sidebar -->
+      {% block post_post %}
+      {% endblock %}
+    </div>
+
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "posts/post_base.html" %}
+{% load django_bootstrap5 %}
+
+{% block post_content %}
+<div class="col-md-8 col-md-offset-2">
+
+  <div class="panel panel-primary">
+
+    <div class="panel-heading">
+      <h3 class="panel-title">
+        <span class="glyphicon glyphicon-pencil"></span>
+        Create New Post
+      </h3>
+    </div>
+
+    <div class="panel-body">
+
+      <form method="POST"
+            action="{% url 'posts:create' %}"
+            id="postForm"
+            role="form">
+
+        {% csrf_token %}
+
+        {% bootstrap_form form %}
+
+        <div class="form-group text-right">
+          <button type="submit" class="btn btn-primary btn-lg">
+            <span class="glyphicon glyphicon-send"></span>
+            Post
+          </button>
+
+          <a href="{% url 'posts:all' %}"
+             class="btn btn-default btn-lg">
+            Cancel
+          </a>
+        </div>
+
+      </form>
+
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

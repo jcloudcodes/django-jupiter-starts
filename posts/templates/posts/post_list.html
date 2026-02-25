@@ -1,0 +1,74 @@
+{% extends "posts/post_base.html" %}
+{% load django_bootstrap5 %}
+
+{% block pre_post_content %}
+<div class="col-md-4">
+
+  {% if request.user.is_authenticated %}
+  <div class="panel panel-default">
+    <div class="panel-heading">
+      <h4 class="panel-title">Your Groups</h4>
+    </div>
+    <div class="panel-body">
+
+      {% if get_user_groups %}
+        <ul class="list-unstyled">
+          {% for member_group in get_user_groups %}
+            <li style="margin-bottom:5px;">
+              <a href="{% url 'groups:single' slug=member_group.group.slug %}">
+                {{ member_group.group.name }}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-muted">You haven't joined any groups yet.</p>
+      {% endif %}
+
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="panel panel-default">
+    <div class="panel-heading">
+      <h4 class="panel-title">All Groups</h4>
+    </div>
+    <div class="panel-body">
+
+      {% if get_other_groups %}
+        <ul class="list-unstyled">
+          {% for other_group in get_other_groups %}
+            <li style="margin-bottom:5px;">
+              <a href="{% url 'groups:single' slug=other_group.slug %}">
+                {{ other_group.name }}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-muted">No groups available.</p>
+      {% endif %}
+
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+
+{% block post_content %}
+<div class="col-md-8">
+
+  {% if post_list %}
+    {% for post in post_list %}
+      {% include "posts/_post.html" with post=post %}
+      <hr>
+    {% endfor %}
+  {% else %}
+    <div class="alert alert-info">
+      No posts available yet.
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

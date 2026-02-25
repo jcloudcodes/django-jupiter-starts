@@ -1,0 +1,41 @@
+{% extends "posts/post_base.html" %}
+
+{% block prepost %}
+<div class="col-md-4">
+
+  <div class="panel panel-default">
+    <div class="panel-body">
+      <h3 style="margin-top:0;">
+        <span class="glyphicon glyphicon-user"></span>
+        @{{ post_user.username }}
+      </h3>
+
+      <p class="text-muted" style="margin-bottom:0;">
+        Post History
+      </p>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block post_content %}
+<div class="col-md-8">
+
+  <div class="page-header" style="margin-top:0;">
+    <h2 style="margin-top:0;">Posts</h2>
+  </div>
+
+  {% if post_list %}
+    {% for post in post_list %}
+      {% include "posts/_post.html" with post=post %}
+      <hr>
+    {% endfor %}
+  {% else %}
+    <div class="alert alert-info">
+      No posts yet for @{{ post_user.username }}.
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

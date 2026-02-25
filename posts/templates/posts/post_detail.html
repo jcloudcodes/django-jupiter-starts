@@ -1,0 +1,15 @@
+{% extends "posts/post_base.html" %}
+
+{% block post_content %}
+<div class="col-md-8 col-md-offset-2">
+
+  <div class="panel panel-default">
+    <div class="panel-body">
+
+      {% include "posts/_post.html" with post=object %}
+
+    </div>
+  </div>
+
+</div>
+{% endblock %}

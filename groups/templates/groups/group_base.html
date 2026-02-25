@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="row">
+
+    <!-- Optional Left Sidebar -->
+    {% block pregroup %}
+    <!-- Example: filters / group navigation -->
+    {% endblock %}
+
+    <!-- Main Group Content -->
+    <div class="col-md-8 col-md-offset-2">
+      {% block group_content %}
+      <!-- Main group content renders here -->
+      {% endblock %}
+    </div>
+
+    <!-- Optional Right Sidebar -->
+    {% block postgroup %}
+    <!-- Example: trending groups / ads / activity -->
+    {% endblock %}
+
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,49 @@
+<div class="post media">
+  <div class="media-body">
+
+    <h3 class="media-heading" style="margin-top:0;">
+      {{ post.message_html|safe }}
+    </h3>
+
+    <p class="text-muted" style="margin-bottom:10px;">
+      <strong>{{ post.user.username }}</strong>
+      &middot;
+      <span class="username">
+        <a href="{% url 'posts:for_user' username=post.user.username %}">
+          @{{ post.user.username }}
+        </a>
+      </span>
+      &middot;
+
+      <time class="time"
+            datetime="{{ post.created_at|date:'c' }}">
+        <a href="{% url 'posts:single' username=post.user.username pk=post.pk %}">
+          {{ post.created_at|date:"M j, Y, P" }}
+        </a>
+      </time>
+
+      {% if post.group %}
+        &middot;
+        <span class="group-name">
+          in
+          <a href="{% url 'groups:single' slug=post.group.slug %}">
+            {{ post.group.name }}
+          </a>
+        </span>
+      {% endif %}
+    </p>
+
+    <div class="media-footer">
+      {% if user.is_authenticated and post.user_id == user.id and not hide_delete %}
+        <a href="{% url 'posts:delete' pk=post.pk %}"
+           class="btn btn-default btn-xs"
+           title="Delete post"
+           aria-label="Delete post">
+          <span class="glyphicon glyphicon-remove text-danger" aria-hidden="true"></span>
+          <span class="text-danger">Delete</span>
+        </a>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
