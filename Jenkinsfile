@@ -1,23 +1,15 @@
 @Library('jcloudcodes-shared-library@main') _
 
 pipeline {
-    //agent any
-  //agent { label 'jslave-inbound' }
-
-  agent {
-    docker {
-      image 'python:3.12-slim'
-      label 'jslave-inbound'
-      args '-u root:root'
-    }
-  }
+  // ✅ Run on your real agent (NO pipeline-level docker agent)
+  agent { label 'jslave-inbound' }
 
   options {
     timestamps()
-    //ansiColor('xterm')
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '30'))
     timeout(time: 45, unit: 'MINUTES')
+    skipDefaultCheckout(true)   // ✅ stop Jenkins doing extra auto-checkouts
   }
 
   parameters {
@@ -27,37 +19,24 @@ pipeline {
   }
 
   environment {
-    APP_NAME          = 'nasa_world'
-    PYTHON_VERSION    = '3.12'
-    VENV_DIR          = '.venv'
-    DJANGO_SETTINGS   = 'nasa_world.settings'
+    APP_NAME        = 'nasa_world'
+    VENV_DIR        = '.venv'
+    DJANGO_SETTINGS = 'nasa_world.settings'
 
-    //Sonar metadata
-    SONAR_PROJECT_KEY   = 'django-juipiter-starts'
-    SONAR_PROJECT_NAME  = 'django-juipiter-starts'
-    //SonarQube server name configured in Jenkins
-    SONAR_SERVER = 'jcloudcodes-sonarqube'
+    // Sonar
+    SONAR_PROJECT_KEY  = 'django-jupiter-starts'
+    SONAR_PROJECT_NAME = 'django-jupiter-starts'
+    SONAR_SERVER       = 'jcloudcodes-sonarqube'
 
-    // Artifact naming
-    BUILD_TS = "${new Date().format('yyyyMMddHHmmss', TimeZone.getTimeZone('UTC'))}"
-
-    // Nexus raw repo (zip artifacts)
-    NEXUS_URL       = 'https://nexus.jcloudcodes.com'
-    NEXUS_RAW_REPO  = 'django-artifacts'      // <-- create a RAW hosted repo with this name
-    NEXUS_CRED_ID   = 'nexus-cred'            // <-- Jenkins credential (username/password)
+    // Nexus raw (zip artifacts)
+    NEXUS_URL      = 'https://nexus.jcloudcodes.com'
+    NEXUS_RAW_REPO = 'django-artifacts'
+    NEXUS_CRED_ID  = 'nexus-cred'
 
     // Docker registry
-    // - For JFrog Artifactory Docker registry example:
-    //   REGISTRY_URL = 'https://your-artifactory.example.com'
-    //   IMAGE_NAME   = 'your-docker-local/nasa-world'
-    //
-    // - For Nexus Docker repo example:
-    //   REGISTRY_URL = 'https://nexus.jcloudcodes.com'
-    //   IMAGE_NAME   = 'nasa-docker/nasa_world'
-    //
-    REGISTRY_URL    = 'https://nexus.jcloudcodes.com'
-    IMAGE_NAME      = 'nasa-docker/nasa_world'
-    DOCKER_CRED_ID  = 'docker-registry-cred'  // <-- Jenkins credential for docker registry
+    REGISTRY_URL   = 'https://nexus.jcloudcodes.com'
+    IMAGE_NAME     = 'nasa-docker/nasa_world'
+    DOCKER_CRED_ID = 'docker-registry-cred'
   }
 
   stages {
@@ -68,41 +47,63 @@ pipeline {
         script {
           env.GIT_SHA = sh(script: "git rev-parse --short=12 HEAD", returnStdout: true).trim()
           env.BRANCH  = sh(script: "git rev-parse --abbrev-ref HEAD", returnStdout: true).trim()
+          env.BUILD_TS = sh(script: "date -u +%Y%m%d%H%M%S", returnStdout: true).trim()
           env.ARTIFACT_NAME = "${APP_NAME}-${BRANCH}-${GIT_SHA}-${BUILD_TS}.zip"
           env.DOCKER_TAG    = "${BRANCH}-${GIT_SHA}"
         }
       }
     }
 
-    stage('Setup Python + Install Deps') {
+    stage('Sanity') {
       steps {
-        djangoCi(
-          pythonVersion: env.PYTHON_VERSION,
-          venvDir: env.VENV_DIR,
-          settingsMod: env.DJANGO_SETTINGS,
-          requirements: 'requirements.txt'
-        )
+        sh '''
+          set -euxo pipefail
+          echo "NODE_NAME=$NODE_NAME"
+          echo "WORKSPACE=$WORKSPACE"
+          hostname
+          whoami
+          docker --version
+        '''
       }
     }
 
-    stage('Lint + Unit Tests') {
+    // ✅ Python build/test inside a container (avoids Python 3.9 on host)
+    stage('Setup Python + Install Deps (Py3.12 container)') {
+      steps {
+        sh '''
+          set -euxo pipefail
+          docker pull python:3.12-slim
+
+          docker run --rm -u 0:0 \
+            -v "$PWD:/app" -w /app \
+            python:3.12-slim bash -lc "
+              python --version
+              rm -rf .venv
+              python -m venv .venv
+              .venv/bin/pip install -U pip wheel setuptools
+              .venv/bin/pip install -r requirements.txt
+            "
+        '''
+      }
+    }
+
+    stage('Lint + Unit Tests (Py3.12 container)') {
       steps {
         sh """
           set -euxo pipefail
-          ${VENV_DIR}/bin/python -V
-          ${VENV_DIR}/bin/python -m pip show django || true
+          docker run --rm -u 0:0 \
+            -v "\$PWD:/app" -w /app \
+            python:3.12-slim bash -lc "
+              . .venv/bin/activate
+              python manage.py check --settings=${DJANGO_SETTINGS}
 
-          # Optional: run migrations check (safe check)
-          ${VENV_DIR}/bin/python manage.py check --settings=${DJANGO_SETTINGS}
-
-          # If you use pytest:
-          if [ -f "pytest.ini" ] || [ -d "tests" ]; then
-            ${VENV_DIR}/bin/python -m pip install -U pytest pytest-django coverage
-            ${VENV_DIR}/bin/python -m pytest -q --disable-warnings --maxfail=1
-          else
-            # Django default tests
-            ${VENV_DIR}/bin/python manage.py test --settings=${DJANGO_SETTINGS} -v 2
-          fi
+              if [ -f pytest.ini ] || [ -d tests ]; then
+                pip install -U pytest pytest-django coverage
+                pytest -q --disable-warnings --maxfail=1
+              else
+                python manage.py test --settings=${DJANGO_SETTINGS} -v 2
+              fi
+            "
         """
       }
     }
@@ -114,66 +115,64 @@ pipeline {
           rm -rf dist
           mkdir -p dist
 
-          # Create a clean zip artifact without venv, git, caches, media/staticfiles
           zip -r "dist/${ARTIFACT_NAME}" . \
             -x ".git/*" ".venv/*" "venv/*" "__pycache__/*" "*.pyc" \
                "staticfiles/*" "media/*" "*.log" ".DS_Store" ".idea/*" ".vscode/*"
+
           ls -lh dist
         """
       }
     }
 
+    // ✅ Use your shared library sonar step (requires sonar-scanner on node)
     stage('SonarQube Scan') {
       steps {
-        // Requires sonar-scanner to exist on agent (or install via tool/containers)
         sonarScan(
           sonarServer: env.SONAR_SERVER,
           projectKey: env.SONAR_PROJECT_KEY,
           projectName: env.SONAR_PROJECT_NAME,
           sources: '.',
-          pythonVersion: env.PYTHON_VERSION,
-          // (optional) extra args:
+          pythonVersion: '3.12',
           extraArgs: "-Dsonar.branch.name=${env.BRANCH}"
         )
       }
     }
 
-//     stage('Quality Gate') {
-//       steps {
-//         timeout(time: 10, unit: 'MINUTES') {
-//           // Fails the build if gate fails
-//           waitForQualityGate abortPipeline: true
-//         }
-//       }
-//     }
+    stage('Quality Gate') {
+      steps {
+        timeout(time: 10, unit: 'MINUTES') {
+          waitForQualityGate abortPipeline: true
+        }
+      }
+    }
 
-//     stage('Upload Artifact to Nexus (RAW)') {
-//       when { expression { return params.PUSH_ARTIFACT } }
-//       steps {
-//         nexusUpload(
-//           nexusUrl: env.NEXUS_URL,
-//           rawRepo: env.NEXUS_RAW_REPO,
-//           targetPath: "${APP_NAME}/${env.BRANCH}/${env.GIT_SHA}",
-//           filePath: "dist/${env.ARTIFACT_NAME}",
-//           credentialsId: env.NEXUS_CRED_ID
-//         )
-//       }
-//     }
+    stage('Upload Artifact to Nexus (RAW)') {
+      when { expression { return params.PUSH_ARTIFACT } }
+      steps {
+        nexusUpload(
+          nexusUrl: env.NEXUS_URL,
+          rawRepo: env.NEXUS_RAW_REPO,
+          targetPath: "${APP_NAME}/${env.BRANCH}/${env.GIT_SHA}",
+          filePath: "dist/${env.ARTIFACT_NAME}",
+          credentialsId: env.NEXUS_CRED_ID
+        )
+      }
+    }
 
-//     stage('Build & Push Docker Image') {
-//       when { expression { return params.PUSH_DOCKER } }
-//       steps {
-//         dockerBuildPush(
-//           registry: env.REGISTRY_URL,
-//           credentialsId: env.DOCKER_CRED_ID,
-//           image: env.IMAGE_NAME,
-//           tag: env.DOCKER_TAG,
-//           dockerfile: 'Dockerfile',
-//           context: '.'
-//         )
-//       }
-//     }
-   }
+    stage('Build & Push Docker Image') {
+      when { expression { return params.PUSH_DOCKER } }
+      steps {
+        dockerBuildPush(
+          registry: env.REGISTRY_URL,
+          credentialsId: env.DOCKER_CRED_ID,
+          image: env.IMAGE_NAME,
+          tag: env.DOCKER_TAG,
+          dockerfile: 'Dockerfile',
+          context: '.'
+        )
+      }
+    }
+  }
 
   post {
     always {
