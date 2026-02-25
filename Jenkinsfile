@@ -34,9 +34,8 @@ pipeline {
     NEXUS_CRED_ID   = 'jcloudcodes-nexus-cred'
 
     //image base name for your app
-    APP_NAME = 'nasa-app'
     //IMAGE name (your application container name)
-    IMAGE_NAME = 'nasa-app'
+    //IMAGE_NAME = 'nasa-app'
     APP_NAME    = 'nasa-app'
     IMAGE_NAME  = 'django-starts-jupiters-ig'
 
