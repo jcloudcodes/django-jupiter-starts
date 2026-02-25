@@ -130,12 +130,12 @@ pipeline {
     // ✅ Use your shared library sonar step (requires sonar-scanner on node)
     stage('SonarQube Scan') {
         steps {
-            withSonarQubeEnv("${SONAR_SERVER}") {
+            withSonarQubeEnv('jcloudcodes-sonarqube') {
             sh """
                 set -euxo pipefail
                 docker run --rm \
                 -e SONAR_HOST_URL="\$SONAR_HOST_URL" \
-                -e SONAR_AUTH_TOKEN="\$SONAR_AUTH_TOKEN" \
+                -e SONAR_TOKEN="\$SONAR_AUTH_TOKEN" \
                 -v "\$PWD:/usr/src" -w /usr/src \
                 sonarsource/sonar-scanner-cli:latest \
                 -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
