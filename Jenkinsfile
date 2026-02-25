@@ -129,25 +129,24 @@ pipeline {
 
     // ✅ Use your shared library sonar step (requires sonar-scanner on node)
     stage('SonarQube Scan') {
-        steps {
-            withSonarQubeEnv('jcloudcodes-sonarqube') {
-            sh """
-                set -euxo pipefail
-                docker run --rm \
-                -e SONAR_HOST_URL="\$SONAR_HOST_URL" \
-                -e SONAR_TOKEN="\$SONAR_AUTH_TOKEN" \
-                -v "\$PWD:/usr/src" -w /usr/src \
-                sonarsource/sonar-scanner-cli:latest \
-                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                -Dsonar.projectName=${SONAR_PROJECT_NAME} \
-                -Dsonar.sources=. \
-                -Dsonar.python.version=3.12 \
-                -Dsonar.exclusions=**/migrations/**,**/static/**,**/staticfiles/**,**/media/**,**/.venv/**,**/venv/**,**/__pycache__/** \
-                -Dsonar.branch.name=${BRANCH}
-            """
-            }
+    steps {
+        withSonarQubeEnv('jcloudcodes-sonarqube') {
+        sh """
+            set -euxo pipefail
+            docker run --rm \
+            -e SONAR_HOST_URL="\$SONAR_HOST_URL" \
+            -e SONAR_TOKEN="\$SONAR_AUTH_TOKEN" \
+            -v "\$PWD:/usr/src" -w /usr/src \
+            sonarsource/sonar-scanner-cli:latest \
+            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+            -Dsonar.projectName=${SONAR_PROJECT_NAME} \
+            -Dsonar.sources=. \
+            -Dsonar.python.version=3.12 \
+            -Dsonar.exclusions=**/migrations/**,**/static/**,**/staticfiles/**,**/media/**,**/.venv/**,**/venv/**,**/__pycache__/**
+        """
         }
-        }
+    }
+    }
 
     stage('Quality Gate') {
       steps {
