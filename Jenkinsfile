@@ -1,11 +1,11 @@
 @Library('jcloudcodes-shared-library@main') _
 
 pipeline {
-  agent jslave-inbound
+  agent { label 'jslave-inbound' }
 
   options {
     timestamps()
-    ansiColor('xterm')
+    //ansiColor('xterm')
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '30'))
     timeout(time: 45, unit: 'MINUTES')
