@@ -19,7 +19,7 @@ pipeline {
   }
 
   environment {
-    APP_NAME        = 'nasa_world'
+    //APP_NAME        = 'nasa_world'
     VENV_DIR        = '.venv'
     DJANGO_SETTINGS = 'nasa_world.settings'
 
