@@ -99,13 +99,12 @@ pipeline {
             -v "\$PWD:/app" -w /app \
             python:3.12-slim bash -lc "
               . .venv/bin/activate
-              python manage.py check --settings=${DJANGO_SETTINGS}
-
+              python manage.py check --settings=nasa_world.settings_ci
               if [ -f pytest.ini ] || [ -d tests ]; then
                 pip install -U pytest pytest-django coverage
                 pytest -q --disable-warnings --maxfail=1
               else
-                python manage.py test --settings=${DJANGO_SETTINGS} -v 2
+                python manage.py test --settings=nasa_world.settings_ci -v 2
               fi
             "
         """
