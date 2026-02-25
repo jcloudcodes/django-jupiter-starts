@@ -4,13 +4,19 @@ pipeline {
   // ✅ Run on your real agent (NO pipeline-level docker agent)
   agent { label 'jslave-inbound' }
 
-  options {
-    timestamps()
-    disableConcurrentBuilds()
-    buildDiscarder(logRotator(numToKeepStr: '30'))
-    timeout(time: 45, unit: 'MINUTES')
-    skipDefaultCheckout(true)   // ✅ stop Jenkins doing extra auto-checkouts
-  }
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        timeout(time: 45, unit: 'MINUTES')
+        skipDefaultCheckout(true)
+
+        buildDiscarder(logRotator(
+            daysToKeepStr: '2',
+            numToKeepStr: '2',
+            artifactDaysToKeepStr: '2',
+            artifactNumToKeepStr: '2'
+        ))
+    }
 
   parameters {
     choice(name: 'DEPLOY_ENV', choices: ['lab1', 'qa', 'prod'], description: 'Target environment (used for tagging/metadata)')
