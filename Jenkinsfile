@@ -129,17 +129,25 @@ pipeline {
 
     // ✅ Use your shared library sonar step (requires sonar-scanner on node)
     stage('SonarQube Scan') {
-      steps {
-        sonarScan(
-          sonarServer: env.SONAR_SERVER,
-          projectKey: env.SONAR_PROJECT_KEY,
-          projectName: env.SONAR_PROJECT_NAME,
-          sources: '.',
-          pythonVersion: '3.12',
-          extraArgs: "-Dsonar.branch.name=${env.BRANCH}"
-        )
-      }
-    }
+        steps {
+            withSonarQubeEnv("${SONAR_SERVER}") {
+            sh """
+                set -euxo pipefail
+                docker run --rm \
+                -e SONAR_HOST_URL="\$SONAR_HOST_URL" \
+                -e SONAR_AUTH_TOKEN="\$SONAR_AUTH_TOKEN" \
+                -v "\$PWD:/usr/src" -w /usr/src \
+                sonarsource/sonar-scanner-cli:latest \
+                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                -Dsonar.projectName=${SONAR_PROJECT_NAME} \
+                -Dsonar.sources=. \
+                -Dsonar.python.version=3.12 \
+                -Dsonar.exclusions=**/migrations/**,**/static/**,**/staticfiles/**,**/media/**,**/.venv/**,**/venv/**,**/__pycache__/** \
+                -Dsonar.branch.name=${BRANCH}
+            """
+            }
+        }
+        }
 
     stage('Quality Gate') {
       steps {
