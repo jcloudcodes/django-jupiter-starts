@@ -303,19 +303,33 @@ pipeline {
     }
 
     stage('GitOps: Commit & Push Helm repo') {
-      when { expression { return params.GITOPS_DEPLOY } }
-      steps {
-        dir(env.HELM_REPO_DIR) {
-          gitopsCommitPush(
-            repoUrl: env.HELM_REPO_URL,
-            branch: env.HELM_REPO_BRANCH,
-            credentialsId: 'github-cred',
-            commitMessage: "gitops(${env.GITOPS_ENV_FOLDER}): deploy ${env.IMAGE_NAME}:${env.TAG}",
-            pathsToCommit: [ env.GITOPS_VALUES_FILE ]
-          )
-        }
-      }
+     when { expression { return params.GITOPS_DEPLOY && params.PUSH_DOCKER } }
+     steps {
+       dir(env.HELM_REPO_DIR) {
+         gitopsCommitPush(
+           repoUrl: env.HELM_REPO_URL,
+           branch: env.HELM_REPO_BRANCH,
+           credentialsId: 'github-cred',
+           commitMessage: "gitops(${env.GITOPS_ENV_FOLDER}): deploy ${env.IMAGE_NAME}:${env.TAG}",
+           pathsToCommit: [ env.GITOPS_VALUES_FILE ]
+         )
+       }
+     }
     }
+    // stage('GitOps: Commit & Push Helm repo') {
+    //   when { expression { return params.GITOPS_DEPLOY } }
+    //   steps {
+    //     dir(env.HELM_REPO_DIR) {
+    //       gitopsCommitPush(
+    //         repoUrl: env.HELM_REPO_URL,
+    //         branch: env.HELM_REPO_BRANCH,
+    //         credentialsId: 'github-cred',
+    //         commitMessage: "gitops(${env.GITOPS_ENV_FOLDER}): deploy ${env.IMAGE_NAME}:${env.TAG}",
+    //         pathsToCommit: [ env.GITOPS_VALUES_FILE ]
+    //       )
+    //     }
+    //   }
+    // }
 
     // ✅ Wait for Argo CD to sync + become healthy (prod ready)
     stage('ArgoCD: Wait for Sync/Healthy') {
