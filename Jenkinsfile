@@ -1,31 +1,34 @@
 @Library('jcloudcodes-shared-library@main') _
 
 pipeline {
-  // ✅ Run on your real agent (NO pipeline-level docker agent)
   agent { label 'jslave-inbound' }
 
-    options {
-        timestamps()
-        disableConcurrentBuilds()
-        timeout(time: 45, unit: 'MINUTES')
-        skipDefaultCheckout(true)
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    timeout(time: 45, unit: 'MINUTES')
+    skipDefaultCheckout(true)
 
-        buildDiscarder(logRotator(
-            daysToKeepStr: '2',
-            numToKeepStr: '2',
-            artifactDaysToKeepStr: '2',
-            artifactNumToKeepStr: '2'
-        ))
-    }
+    buildDiscarder(logRotator(
+      daysToKeepStr: '2',
+      numToKeepStr: '2',
+      artifactDaysToKeepStr: '2',
+      artifactNumToKeepStr: '2'
+    ))
+  }
 
   parameters {
-    choice(name: 'DEPLOY_ENV', choices: ['lab1', 'qa', 'prod'], description: 'Target environment (used for tagging/metadata)')
+    choice(name: 'DEPLOY_ENV', choices: ['lab1', 'qa', 'prod'], description: 'Target environment')
     booleanParam(name: 'PUSH_ARTIFACT', defaultValue: true, description: 'Upload build zip to Nexus raw repo')
     booleanParam(name: 'PUSH_DOCKER', defaultValue: true, description: 'Build & push Docker image to registry')
+
+    // ✅ GitOps deploy (ArgoCD trigger)
+    booleanParam(name: 'GITOPS_DEPLOY', defaultValue: true, description: 'Update Git Helm values to trigger ArgoCD deploy')
+    booleanParam(name: 'REQUIRE_APPROVAL_FOR_PROD', defaultValue: true, description: 'Manual approval gate for prod')
+    booleanParam(name: 'ARGO_WAIT', defaultValue: true, description: 'Wait for ArgoCD app to become Synced/Healthy')
   }
 
   environment {
-    //APP_NAME        = 'nasa_world'
     VENV_DIR        = '.venv'
     DJANGO_SETTINGS = 'nasa_world.settings'
 
@@ -39,26 +42,29 @@ pipeline {
     NEXUS_RAW_REPO  = 'django-starts-jupiters'
     NEXUS_CRED_ID   = 'jcloudcodes-nexus-cred'
 
-    //image base name for your app
-    //IMAGE name (your application container name)
-    //IMAGE_NAME = 'nasa-app'
+    // App / image
     APP_NAME    = 'nasa-app'
     IMAGE_NAME  = 'django-starts-jupiters-ig'
 
-    // Nexus Docker registry (set host + port correctly)
-    // Example: nexus.jcloudcodes.com:20080
+    // Nexus Docker registry
     NEXUS_DOCKER_REGISTRY = 'nexus.jcloudcodes.com:20080'
-    NEXUS_DOCKER_REPO     = 'django-starts-jupiters-ig'       // your docker (hosted) repo name in Nexus
-    NEXUS_DOCKER_CRED     = 'jcloudcodes-nexus-cred' // Jenkins username/password cred for Nexus
+    NEXUS_DOCKER_REPO     = 'django-starts-jupiters-ig'
+    NEXUS_DOCKER_CRED     = 'jcloudcodes-nexus-cred'
 
     // Docker Hub
-    DOCKERHUB_NAMESPACE   = 'jcloudcodes'       // your Docker Hub username/org
-    DOCKERHUB_CRED        = 'jcloudcodes-dockerhub-cred'    // Jenkins username/password cred for Docker Hub
+    DOCKERHUB_NAMESPACE   = 'jcloudcodes'
+    DOCKERHUB_CRED        = 'jcloudcodes-dockerhub-cred'
 
-    // // Docker registry
-    // REGISTRY_URL   = 'https://nexus.jcloudcodes.com'
-    // IMAGE_NAME     = 'nasa-docker/nasa_world'
-    // DOCKER_CRED_ID = 'docker-registry-cred'
+    // ✅ GitOps repo (same repo or separate repo)
+    // If same repo: use your current repo URL
+    GITOPS_REPO_URL = 'https://github.com/YOUR_ORG/YOUR_REPO.git'
+    GITOPS_BRANCH   = 'main'
+
+    // ✅ Argo CD
+    ARGOCD_SERVER = 'argocd.jcloudcodes.com'  // change if using LB / ingress / port-forward
+    ARGOCD_APP_DEV  = 'django-app-dev'
+    ARGOCD_APP_QA   = 'django-app-qa'
+    ARGOCD_APP_PROD = 'django-app-prod'
   }
 
   stages {
@@ -67,9 +73,10 @@ pipeline {
         cleanWs()
         checkout scm
         script {
-          env.GIT_SHA = sh(script: "git rev-parse --short=12 HEAD", returnStdout: true).trim()
-          env.BRANCH  = sh(script: "git rev-parse --abbrev-ref HEAD", returnStdout: true).trim()
+          env.GIT_SHA  = sh(script: "git rev-parse --short=12 HEAD", returnStdout: true).trim()
+          env.BRANCH   = sh(script: "git rev-parse --abbrev-ref HEAD", returnStdout: true).trim()
           env.BUILD_TS = sh(script: "date -u +%Y%m%d%H%M%S", returnStdout: true).trim()
+
           env.ARTIFACT_NAME = "${APP_NAME}-${BRANCH}-${GIT_SHA}-${BUILD_TS}.zip"
           env.DOCKER_TAG    = "${BRANCH}-${GIT_SHA}"
         }
@@ -89,29 +96,28 @@ pipeline {
       }
     }
 
-    // ✅ Python build/test inside a container (avoids Python 3.9 on host)
     stage('Setup Python + Install Deps (Py3.12 container)') {
-        steps {
-            sh '''
-            set -euxo pipefail
-            docker pull python:3.12-slim
+      steps {
+        sh '''
+          set -euxo pipefail
+          docker pull python:3.12-slim
 
-            docker run --rm -u 0:0 \
-                -v "$PWD:/app" -w /app \
-                python:3.12-slim bash -lc "
-                apt-get update
-                apt-get install -y --no-install-recommends gcc build-essential python3-dev libffi-dev
-                rm -rf /var/lib/apt/lists/*
+          docker run --rm -u 0:0 \
+            -v "$PWD:/app" -w /app \
+            python:3.12-slim bash -lc "
+              apt-get update
+              apt-get install -y --no-install-recommends gcc build-essential python3-dev libffi-dev
+              rm -rf /var/lib/apt/lists/*
 
-                python --version
-                rm -rf .venv
-                python -m venv .venv
-                .venv/bin/pip install -U pip wheel setuptools
-                .venv/bin/pip install -r requirements.txt
-                "
-            '''
-        }
-        }
+              python --version
+              rm -rf .venv
+              python -m venv .venv
+              .venv/bin/pip install -U pip wheel setuptools
+              .venv/bin/pip install -r requirements.txt
+            "
+        '''
+      }
+    }
 
     stage('Lint + Unit Tests (Py3.12 container)') {
       steps {
@@ -149,30 +155,21 @@ pipeline {
       }
     }
 
-    // ✅ Use your shared library sonar step (requires sonar-scanner on node)
     stage('SonarQube Scan') {
-        steps {
-            withSonarQubeEnv('jcloudcodes-sonarqube') {
-            sh """
-                set -euxo pipefail
-                ${tool 'jcloudcodes-sonarqube-scanner'}/bin/sonar-scanner \
-                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                -Dsonar.projectName=${SONAR_PROJECT_NAME} \
-                -Dsonar.sources=. \
-                -Dsonar.python.version=3.12 \
-                -Dsonar.exclusions=**/migrations/**,**/static/**,**/staticfiles/**,**/media/**,**/.venv/**,**/venv/**,**/__pycache__/**
-            """
-            }
+      steps {
+        withSonarQubeEnv('jcloudcodes-sonarqube') {
+          sh """
+            set -euxo pipefail
+            ${tool 'jcloudcodes-sonarqube-scanner'}/bin/sonar-scanner \
+              -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+              -Dsonar.projectName=${SONAR_PROJECT_NAME} \
+              -Dsonar.sources=. \
+              -Dsonar.python.version=3.12 \
+              -Dsonar.exclusions=**/migrations/**,**/static/**,**/staticfiles/**,**/media/**,**/.venv/**,**/venv/**,**/__pycache__/**
+          """
         }
-        }
-
-    // stage('Quality Gate') {
-    //     steps {
-    //         timeout(time: 60, unit: 'SECONDS') {
-    //         waitForQualityGate abortPipeline: true
-    //         }
-    //     }
-    //     }
+      }
+    }
 
     stage('Upload Artifact to Nexus (RAW)') {
       when { expression { return params.PUSH_ARTIFACT } }
@@ -186,79 +183,147 @@ pipeline {
         )
       }
     }
+
     stage('Build Docker Image') {
-        steps {
-            script {
-            env.TAG = "${env.BUILD_NUMBER}"          // tag number
-            env.LOCAL_IMAGE = "${env.IMAGE_NAME}:${env.TAG}"   // nasa-app:12
-            }
-            sh """
-            set -euxo pipefail
-            docker build -t ${env.LOCAL_IMAGE} -f Dockerfile .
-            docker images | head
-            """
-        }
-        }
-    stage('Push Docker Images (Parallel)') {
-    steps {
+      when { expression { return params.PUSH_DOCKER } }
+      steps {
         script {
-        def tag = env.TAG
+          env.TAG = "${env.BUILD_NUMBER}"                 // final pushed tag
+          env.LOCAL_IMAGE = "${env.IMAGE_NAME}:${env.TAG}"
+        }
+        sh """
+          set -euxo pipefail
+          docker build -t ${env.LOCAL_IMAGE} -f Dockerfile .
+          docker images | head
+        """
+      }
+    }
 
-        def nexusRepoImage = "${env.NEXUS_DOCKER_REGISTRY}/${env.NEXUS_DOCKER_REPO}/${env.IMAGE_NAME}"
-        def hubRepoImage   = "${env.DOCKERHUB_NAMESPACE}/${env.IMAGE_NAME}"
+    stage('Push Docker Images (Parallel)') {
+      when { expression { return params.PUSH_DOCKER } }
+      steps {
+        script {
+          def tag = env.TAG
 
-        echo "NEXUS IMAGE: ${nexusRepoImage}:${tag}"
-        echo "HUB   IMAGE: ${hubRepoImage}:${tag}"
+          def nexusRepoImage = "${env.NEXUS_DOCKER_REGISTRY}/${env.NEXUS_DOCKER_REPO}/${env.IMAGE_NAME}"
+          def hubRepoImage   = "${env.DOCKERHUB_NAMESPACE}/${env.IMAGE_NAME}"
 
-        parallel(
+          echo "NEXUS IMAGE: ${nexusRepoImage}:${tag}"
+          echo "HUB   IMAGE: ${hubRepoImage}:${tag}"
+
+          parallel(
             'Push Nexus': {
-            dockerBuildPush(
+              dockerBuildPush(
                 build: false,
                 sourceImage: env.LOCAL_IMAGE,
                 registry: "http://${env.NEXUS_DOCKER_REGISTRY}",
                 credentialsId: env.NEXUS_DOCKER_CRED,
-                image: nexusRepoImage,   // repo/image (NO tag)
-                tag: tag                 // tag number
-            )
+                image: nexusRepoImage,
+                tag: tag
+              )
             },
             'Push Docker Hub': {
-            dockerBuildPush(
+              dockerBuildPush(
                 build: false,
                 sourceImage: env.LOCAL_IMAGE,
                 registry: "https://index.docker.io/v1/",
                 credentialsId: env.DOCKERHUB_CRED,
-                image: hubRepoImage,     // namespace/image (NO tag)
+                image: hubRepoImage,
                 tag: tag,
-                alsoLatest: (env.BRANCH == 'prod')
-            )
+                alsoLatest: (params.DEPLOY_ENV == 'prod')
+              )
             }
-        )
+          )
         }
+      }
     }
+
+    // ✅ Approval gate for PROD (before GitOps change)
+    stage('Approval: PROD Deploy') {
+      when { expression { return params.GITOPS_DEPLOY && params.DEPLOY_ENV == 'prod' && params.REQUIRE_APPROVAL_FOR_PROD } }
+      steps {
+        timeout(time: 15, unit: 'MINUTES') {
+          input message: "Approve PROD GitOps deploy to ArgoCD?", ok: "Deploy PROD"
+        }
+      }
+    }
+
+    // ✅ GitOps update (ArgoCD trigger)
+    stage('GitOps: Update Helm values (trigger ArgoCD)') {
+      when { expression { return params.GITOPS_DEPLOY } }
+      steps {
+        script {
+          // map your job env names to folder names
+          def envFolder = (params.DEPLOY_ENV == 'lab1') ? 'dev' : params.DEPLOY_ENV
+          def valuesFile = "repo/environments/${envFolder}/values.yaml"
+
+          // Determine Argo app by env
+          def argoApp = (params.DEPLOY_ENV == 'lab1') ? env.ARGOCD_APP_DEV :
+                        (params.DEPLOY_ENV == 'qa')   ? env.ARGOCD_APP_QA  : env.ARGOCD_APP_PROD
+
+          // GitOps update via shared lib
+          gitopsUpdate(
+            deployEnv: envFolder,
+            valuesFile: valuesFile,
+            imageTag: env.TAG,
+            imageNameKey: "image.tag",      // informational
+            argoAppName: argoApp
+          )
+
+          env.ARGO_APP = argoApp
+          env.GITOPS_ENV_FOLDER = envFolder
+          env.GITOPS_VALUES_FILE = valuesFile
+        }
+      }
+    }
+
+    stage('GitOps: Commit & Push') {
+      when { expression { return params.GITOPS_DEPLOY } }
+      steps {
+        gitopsCommitPush(
+          repoUrl: env.GITOPS_REPO_URL,
+          branch: env.GITOPS_BRANCH,
+          credentialsId: 'github-cred',
+          commitMessage: "gitops(${env.GITOPS_ENV_FOLDER}): deploy ${env.IMAGE_NAME}:${env.TAG}",
+          pathsToCommit: [ env.GITOPS_VALUES_FILE ]
+        )
+      }
+    }
+
+    // ✅ Wait for Argo CD to sync + become healthy (prod ready)
+    stage('ArgoCD: Wait for Sync/Healthy') {
+      when { expression { return params.GITOPS_DEPLOY && params.ARGO_WAIT } }
+      steps {
+        argocdWait(
+          server: env.ARGOCD_SERVER,
+          appName: env.ARGO_APP,
+          credentialsId: 'argocd-token',
+          timeoutSeconds: 60,
+          insecure: true
+        )
+      }
     }
   }
 
   post {
     always {
-       // Docker cleanup (don’t fail the build if cleanup fails)
-    sh '''
-      set +e
-      docker images | awk '/django-starts-jupiters-ig/ {print $3}' | sort -u | xargs -r docker rmi -f
-      docker image prune -f
-      set -e
-    '''
-    // Jenkins artifacts + workspace cleanup
-    archiveArtifacts artifacts: 'dist/*.zip', fingerprint: true, onlyIfSuccessful: false
-    junit allowEmptyResults: true, testResults: '**/test-results/**/*.xml, **/pytest-report.xml'
-    cleanWs(deleteDirs: true, notFailBuild: true)
+      sh '''
+        set +e
+        docker images | awk '/django-starts-jupiters-ig/ {print $3}' | sort -u | xargs -r docker rmi -f
+        docker image prune -f
+        set -e
+      '''
+      archiveArtifacts artifacts: 'dist/*.zip', fingerprint: true, onlyIfSuccessful: false
+      junit allowEmptyResults: true, testResults: '**/test-results/**/*.xml, **/pytest-report.xml'
+      cleanWs(deleteDirs: true, notFailBuild: true)
     }
 
     success {
-      echo "SUCCESS: ${APP_NAME} artifact=${ARTIFACT_NAME} docker=${IMAGE_NAME}:${DOCKER_TAG}"
+      echo "SUCCESS: ${APP_NAME} artifact=${ARTIFACT_NAME} docker=${IMAGE_NAME}:${TAG} env=${DEPLOY_ENV} argoApp=${ARGO_APP}"
     }
 
     failure {
-      echo "FAILED: Check Sonar gate, tests, and Nexus/Docker auth"
+      echo "FAILED: Check tests/sonar/nexus/docker auth or ArgoCD sync health"
     }
   }
 }
