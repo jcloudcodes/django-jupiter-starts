@@ -194,7 +194,7 @@ pipeline {
         sh """
           set -euxo pipefail
           docker build -t ${env.LOCAL_IMAGE} -f Dockerfile .
-          (docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.Size}}' | sed -n '1,20p') || true
+          //(docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.Size}}' | sed -n '1,20p') || true
         """
       }
     }
@@ -309,8 +309,11 @@ pipeline {
     always {
       sh '''
         set +e
-        docker images | awk '/django-starts-jupiters-ig/ {print $3}' | sort -u | xargs -r docker rmi -f
-        docker image prune -f
+        echo "Docker cleanup: remove images matching django-starts-jupiters-ig"
+        docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" | \
+          awk '/django-starts-jupiters-ig/ {print $2}' | sort -u | \
+          xargs -r docker rmi -f
+        docker image prune -f || true
         set -e
       '''
       archiveArtifacts artifacts: 'dist/*.zip', fingerprint: true, onlyIfSuccessful: false
