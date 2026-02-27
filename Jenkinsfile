@@ -69,23 +69,6 @@ pipeline {
 
   stages {
 
-    stage('Pre-Deployment Slave Cleanup (Workspace Safe)') {
-      steps {
-        sh '''
-          set -euxo pipefail
-          echo "WORKSPACE=$WORKSPACE"
-          BASE_DIR=$(dirname "$WORKSPACE")
-          echo "Base workspace dir: $BASE_DIR"
-
-          echo "Removing @tmp folders..."
-          find "$BASE_DIR" -maxdepth 1 -type d -name "*@tmp" -exec rm -rf {} + || true
-
-          echo "Disk usage:"
-          df -h || true
-        '''
-      }
-    }
-
     stage('Checkout') {
       steps {
         cleanWs()
