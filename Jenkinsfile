@@ -23,7 +23,7 @@ pipeline {
     booleanParam(name: 'PUSH_DOCKER', defaultValue: true, description: 'Build & push Docker image to registry')
 
     // ✅ GitOps deploy (ArgoCD trigger)
-    booleanParam(name: 'GITOPS_DEPLOY', defaultValue: true, description: 'Update Git Helm values to trigger ArgoCD deploy')
+    booleanParam(name: 'GITOPS_DEPLOY', defaultValue: true, description: 'Update Helm repo values to trigger ArgoCD deploy')
     booleanParam(name: 'REQUIRE_APPROVAL_FOR_PROD', defaultValue: true, description: 'Manual approval gate for prod')
     booleanParam(name: 'ARGO_WAIT', defaultValue: true, description: 'Wait for ArgoCD app to become Synced/Healthy')
   }
@@ -31,6 +31,11 @@ pipeline {
   environment {
     VENV_DIR        = '.venv'
     DJANGO_SETTINGS = 'nasa_world.settings'
+
+    // ✅ Helm GitOps repo (ArgoCD watches this repo)
+    HELM_REPO_URL    = 'https://github.com/jcloudcodes/jcloud_argocd.git'
+    HELM_REPO_BRANCH = 'main'
+    HELM_REPO_DIR    = 'helm-gitops'
 
     // Sonar
     SONAR_PROJECT_KEY  = 'django-jupiter-starts'
@@ -55,19 +60,32 @@ pipeline {
     DOCKERHUB_NAMESPACE   = 'jcloudcodes'
     DOCKERHUB_CRED        = 'jcloudcodes-dockerhub-cred'
 
-    // ✅ GitOps repo (same repo or separate repo)
-    // If same repo: use your current repo URL
-    GITOPS_REPO_URL = 'https://github.com/YOUR_ORG/YOUR_REPO.git'
-    GITOPS_BRANCH   = 'main'
-
     // ✅ Argo CD
-    ARGOCD_SERVER = 'argocd.jcloudcodes.com'  // change if using LB / ingress / port-forward
+    ARGOCD_SERVER   = 'argocd.jcloudcodes.com'  // change if using LB / ingress / port-forward
     ARGOCD_APP_DEV  = 'django-app-dev'
     ARGOCD_APP_QA   = 'django-app-qa'
     ARGOCD_APP_PROD = 'django-app-prod'
   }
 
   stages {
+
+    stage('Pre-Deployment Slave Cleanup (Workspace Safe)') {
+      steps {
+        sh '''
+          set -euxo pipefail
+          echo "WORKSPACE=$WORKSPACE"
+          BASE_DIR=$(dirname "$WORKSPACE")
+          echo "Base workspace dir: $BASE_DIR"
+
+          echo "Removing @tmp folders..."
+          find "$BASE_DIR" -maxdepth 1 -type d -name "*@tmp" -exec rm -rf {} + || true
+
+          echo "Disk usage:"
+          df -h || true
+        '''
+      }
+    }
+
     stage('Checkout') {
       steps {
         cleanWs()
@@ -246,6 +264,7 @@ pipeline {
         }
       }
     }
+
     stage('Set Image Tag (always)') {
       steps {
         script {
@@ -256,45 +275,62 @@ pipeline {
         }
       }
     }
-    // ✅ GitOps update (ArgoCD trigger)
-    stage('GitOps: Update Helm values (trigger ArgoCD)') {
+
+    // ✅ GitOps update (ArgoCD trigger) - updates Helm repo, not app repo
+    stage('GitOps: Update Helm repo values (trigger ArgoCD)') {
       when { expression { return params.GITOPS_DEPLOY } }
       steps {
         script {
-          // map your job env names to folder names
           def envFolder = (params.DEPLOY_ENV == 'lab1') ? 'dev' : params.DEPLOY_ENV
-          def valuesFile = "repo/environments/${envFolder}/values.yaml"
 
-          // Determine Argo app by env
           def argoApp = (params.DEPLOY_ENV == 'lab1') ? env.ARGOCD_APP_DEV :
                         (params.DEPLOY_ENV == 'qa')   ? env.ARGOCD_APP_QA  : env.ARGOCD_APP_PROD
 
-          // GitOps update via shared lib
-          gitopsUpdate(
-            deployEnv: envFolder,
-            valuesFile: valuesFile,
-            imageTag: env.TAG,
-            imageNameKey: "image.tag",      // informational
-            argoAppName: argoApp
-          )
-
           env.ARGO_APP = argoApp
           env.GITOPS_ENV_FOLDER = envFolder
-          env.GITOPS_VALUES_FILE = valuesFile
+
+          dir(env.HELM_REPO_DIR) {
+            deleteDir()
+
+            checkout([
+              $class: 'GitSCM',
+              branches: [[name: "*/${env.HELM_REPO_BRANCH}"]],
+              userRemoteConfigs: [[
+                url: env.HELM_REPO_URL,
+                credentialsId: 'github-cred'
+              ]]
+            ])
+
+            def valuesFile = "environments/${envFolder}/values.yaml"
+            if (!fileExists(valuesFile)) {
+              error("Missing Helm values file: ${env.HELM_REPO_DIR}/${valuesFile}")
+            }
+
+            gitopsUpdate(
+              deployEnv: envFolder,
+              valuesFile: valuesFile,
+              imageTag: env.TAG,
+              argoAppName: argoApp
+            )
+
+            env.GITOPS_VALUES_FILE = valuesFile
+          }
         }
       }
     }
 
-    stage('GitOps: Commit & Push') {
+    stage('GitOps: Commit & Push Helm repo') {
       when { expression { return params.GITOPS_DEPLOY } }
       steps {
-        gitopsCommitPush(
-          repoUrl: env.GITOPS_REPO_URL,
-          branch: env.GITOPS_BRANCH,
-          credentialsId: 'github-cred',
-          commitMessage: "gitops(${env.GITOPS_ENV_FOLDER}): deploy ${env.IMAGE_NAME}:${env.TAG}",
-          pathsToCommit: [ env.GITOPS_VALUES_FILE ]
-        )
+        dir(env.HELM_REPO_DIR) {
+          gitopsCommitPush(
+            repoUrl: env.HELM_REPO_URL,
+            branch: env.HELM_REPO_BRANCH,
+            credentialsId: 'github-cred',
+            commitMessage: "gitops(${env.GITOPS_ENV_FOLDER}): deploy ${env.IMAGE_NAME}:${env.TAG}",
+            pathsToCommit: [ env.GITOPS_VALUES_FILE ]
+          )
+        }
       }
     }
 
@@ -306,7 +342,7 @@ pipeline {
           server: env.ARGOCD_SERVER,
           appName: env.ARGO_APP,
           credentialsId: 'argocd-token',
-          timeoutSeconds: 60,
+          timeoutSeconds: 600,
           insecure: true
         )
       }
@@ -320,9 +356,9 @@ pipeline {
         echo "Docker cleanup: remove images matching django-starts-jupiters-ig"
         docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" | \
           awk '/django-starts-jupiters-ig/ {print $2}' | sort -u | \
-          xargs -r docker rmi -f
+          xargs -r docker rmi -f || true
         docker image prune -f || true
-        set -e
+        true
       '''
       archiveArtifacts artifacts: 'dist/*.zip', fingerprint: true, onlyIfSuccessful: false
       junit allowEmptyResults: true, testResults: '**/test-results/**/*.xml, **/pytest-report.xml'
@@ -334,7 +370,7 @@ pipeline {
     }
 
     failure {
-      echo "FAILED: Check tests/sonar/nexus/docker auth or ArgoCD sync health"
+      echo "FAILED: Check logs above for the stage that failed (GitOps/ArgoCD/Tests/Nexus/Docker)."
     }
   }
 }
