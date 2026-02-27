@@ -246,7 +246,16 @@ pipeline {
         }
       }
     }
-
+    stage('Set Image Tag (always)') {
+      steps {
+        script {
+          // If docker build ran, TAG already set.
+          // If not, fallback to BUILD_NUMBER so GitOps still works.
+          env.TAG = env.TAG?.trim() ? env.TAG : "${env.BUILD_NUMBER}"
+          echo "Using image tag: ${env.TAG}"
+        }
+      }
+    }
     // ✅ GitOps update (ArgoCD trigger)
     stage('GitOps: Update Helm values (trigger ArgoCD)') {
       when { expression { return params.GITOPS_DEPLOY } }
