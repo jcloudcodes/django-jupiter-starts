@@ -194,7 +194,6 @@ pipeline {
         sh """
           set -euxo pipefail
           docker build -t ${env.LOCAL_IMAGE} -f Dockerfile .
-          //(docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.Size}}' | sed -n '1,20p') || true
         """
       }
     }
