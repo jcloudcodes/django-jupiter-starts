@@ -275,14 +275,13 @@ pipeline {
           dir(env.HELM_REPO_DIR) {
             deleteDir()
 
-            checkout([
-              $class: 'GitSCM',
-              branches: [[name: "*/${env.HELM_REPO_BRANCH}"]],
-              userRemoteConfigs: [[
-                url: env.HELM_REPO_URL,
+            // ✅ Proper branch checkout (no detached HEAD)
+            git url: env.HELM_REPO_URL,
+                branch: env.HELM_REPO_BRANCH,
                 credentialsId: 'github-cred'
-              ]]
-            ])
+
+            sh 'git status -sb'
+
 
             def valuesFile = "environments/${envFolder}/values.yaml"
             if (!fileExists(valuesFile)) {
@@ -316,20 +315,6 @@ pipeline {
        }
      }
     }
-    // stage('GitOps: Commit & Push Helm repo') {
-    //   when { expression { return params.GITOPS_DEPLOY } }
-    //   steps {
-    //     dir(env.HELM_REPO_DIR) {
-    //       gitopsCommitPush(
-    //         repoUrl: env.HELM_REPO_URL,
-    //         branch: env.HELM_REPO_BRANCH,
-    //         credentialsId: 'github-cred',
-    //         commitMessage: "gitops(${env.GITOPS_ENV_FOLDER}): deploy ${env.IMAGE_NAME}:${env.TAG}",
-    //         pathsToCommit: [ env.GITOPS_VALUES_FILE ]
-    //       )
-    //     }
-    //   }
-    // }
 
     // ✅ Wait for Argo CD to sync + become healthy (prod ready)
     stage('ArgoCD: Wait for Sync/Healthy') {
