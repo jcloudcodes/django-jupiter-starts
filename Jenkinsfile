@@ -316,21 +316,68 @@ pipeline {
      }
     }
 
-    // ✅ Wait for Argo CD to sync + become healthy (prod ready)
     stage('ArgoCD: Wait for Sync/Healthy') {
-      when { expression { return params.GITOPS_DEPLOY && params.ARGO_WAIT } }
-      steps {
-        argocdWait(
-          server: env.ARGOCD_SERVER,
-          appName: env.ARGO_APP,
-          credentialsId: 'argocd-token',
-          timeoutSeconds: 600,
-          insecure: true
-        )
-      }
-    }
-  }
+        when { expression { return params.GITOPS_DEPLOY && params.ARGO_WAIT } }
+        steps {
+          script {
+            // Basic sanity (fast fail with clear message)
+            if (!env.ARGOCD_SERVER?.trim()) { error("ARGOCD_SERVER is empty") }
+            if (!env.ARGO_APP?.trim())      { error("ARGO_APP is empty") }
 
+            echo "ArgoCD server: ${env.ARGOCD_SERVER}"
+            echo "ArgoCD app: ${env.ARGO_APP}"
+          }
+
+          // 1) Connectivity check (catches DNS / routing / TLS issues)
+          sh '''
+            set -e
+            echo "Checking ArgoCD reachability..."
+            curl -ksS --connect-timeout 5 --max-time 10 "${ARGOCD_SERVER}/api/version" | head -c 200 || true
+            echo
+          '''
+
+          // 2) App existence check (catches wrong app name / RBAC token issues)
+          // Uses ArgoCD CLI (recommended). If you don't have argocd CLI installed on the agent,
+          // skip this block and go straight to argocdWait below.
+          withCredentials([string(credentialsId: 'argocd-token', variable: 'ARGO_TOKEN')]) {
+            sh '''
+              set -e
+              if command -v argocd >/dev/null 2>&1; then
+                echo "argocd CLI found. Verifying login + app access..."
+                argocd version --server "${ARGOCD_SERVER}" --insecure --auth-token "${ARGO_TOKEN}" || true
+                argocd app get "${ARGO_APP}" --server "${ARGOCD_SERVER}" --insecure --auth-token "${ARGO_TOKEN}" >/dev/null
+                echo "App exists and token has access ✅"
+              else
+                echo "argocd CLI not found on this Jenkins agent; skipping CLI checks."
+              fi
+            '''
+          }
+
+          // 3) Wait for Sync/Healthy
+          argocdWait(
+            server: env.ARGOCD_SERVER,
+            appName: env.ARGO_APP,
+            credentialsId: 'argocd-token',
+            timeoutSeconds: 600,
+            insecure: true
+          )
+        }
+      }
+    // ✅ Wait for Argo CD to sync + become healthy (prod ready)
+    // stage('ArgoCD: Wait for Sync/Healthy') {
+    //   when { expression { return params.GITOPS_DEPLOY && params.ARGO_WAIT } }
+    //   steps {
+    //     argocdWait(
+    //       server: env.ARGOCD_SERVER,
+    //       appName: env.ARGO_APP,
+    //       credentialsId: 'argocd-token',
+    //       timeoutSeconds: 600,
+    //       insecure: true
+    //     )
+    //   }
+    // }
+
+  }
   post {
     always {
       sh '''
