@@ -62,7 +62,7 @@ pipeline {
 
     // ✅ Argo CD
     ARGOCD_SERVER   = 'argocd.jcloudcodes.com'  // change if using LB / ingress / port-forward
-    ARGOCD_APP_DEV  = 'django-app-dev'
+    ARGOCD_APP_DEV  = 'argocd/django-app-dev'   //'django-app-dev'
     ARGOCD_APP_QA   = 'django-app-qa'
     ARGOCD_APP_PROD = 'django-app-prod'
   }
