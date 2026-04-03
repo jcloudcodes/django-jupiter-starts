@@ -7,7 +7,7 @@ argocd account update-password \
   --new-password NEW_STRONG_PASSWORD \
   --server argocd.jcloudcodes.com \
   --insecure
-#option 2 For the jenkins account:
+#option 2 For the jenkins account:s
 argocd account update-password \
   --account jenkins \
   --current-password CURRENT_PASSWORD \
